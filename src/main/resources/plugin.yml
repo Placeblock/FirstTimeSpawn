@@ -1,0 +1,13 @@
+name: FirstTimeSpawn
+version: 1.0.0
+main: de.codelix.firsttimespawn.FirstTimeSpawn
+description: Teleports the player to a specific Location if the player joins the first time
+author: Placeblock
+website: https://codelix.de
+api-version: '1.21.4'
+commands:
+  setspawn:
+    description: Sets the first time spawn
+    aliases:
+      - fts
+      - firsttimespawn
