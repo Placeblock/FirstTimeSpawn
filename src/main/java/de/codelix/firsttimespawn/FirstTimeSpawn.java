@@ -58,7 +58,7 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
         }
 
         this.getServer().getPluginManager().registerEvents(this, this);
-        this.getServer().getCommandMap().register("setspawn", new SetSpawnCommand());
+        this.getCommand("setspawn").setExecutor(new SetSpawnCommand());
     }
 
     private Location loadSpawnLocation() throws SQLException {
@@ -112,8 +112,8 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
     @EventHandler
     public void on(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        boolean firstTime = player.hasPlayedBefore();
-        if (firstTime) {
+        boolean firstTime = !player.hasPlayedBefore();
+        if (firstTime && this.spawnLocation != null) {
             player.teleport(this.spawnLocation);
         }
     }
