@@ -1,7 +1,5 @@
 package de.codelix.firsttimespawn;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
@@ -16,7 +14,7 @@ import java.util.UUID;
 
 public class FirstTimeSpawn extends JavaPlugin implements Listener {
     public static FirstTimeSpawn INSTANCE;
-    private HikariDataSource ds;
+    private DBConfig dbConfig;
     private Location spawnLocation;
 
     @Override
@@ -51,13 +49,8 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
             throw new IllegalStateException("Failed to load config: Host missing in db section");
         }
 
+        this.dbConfig = new DBConfig("jdbc:mysql://"+host+":"+port+"/" + database + "?autoReconnect=true", user, password);
         try {
-            HikariConfig config = new HikariConfig();
-            config.setJdbcUrl("jdbc:mysql://" + host + ":" + port + "/" + database);
-            config.setUsername(user);
-            config.setPassword(password);
-            this.ds = new HikariDataSource(config);
-
             this.createTable();
             this.spawnLocation = this.loadSpawnLocation();
         } catch (SQLException e) {
@@ -69,12 +62,10 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
     }
 
     private Location loadSpawnLocation() throws SQLException {
-        Connection connection = this.ds.getConnection();
-        try (PreparedStatement stmt = connection.prepareStatement("""
-                    SELECT * FROM spawn_location;
-                """)) {
+        try(PreparedStatement stmt = this.getConnection().prepareStatement("""
+            SELECT * FROM spawn_location;
+        """)) {
             ResultSet resultSet = stmt.executeQuery();
-
             if (!resultSet.next()) {
                 this.getLogger().warning("Could not load spawn Location from Database. Did you already set one?");
                 return null;
@@ -95,10 +86,9 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
     }
 
     public void storeSpawnLocation(Location location) throws SQLException {
-        this.spawnLocation = location;
-        try (PreparedStatement stmt = this.ds.getConnection().prepareStatement("""
-                    INSERT INTO spawn_location (world_uuid, x, y, z, yaw, pitch) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE x=?, y=?, z=?, yaw=?, pitch=?;
-                """)) {
+        try(PreparedStatement stmt = this.getConnection().prepareStatement("""
+            INSERT INTO spawn_location (world_uuid, x, y, z, yaw, pitch) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE x=?, y=?, z=?, yaw=?, pitch=?;
+        """)) {
             UUID worldUUID = this.spawnLocation.getWorld().getUID();
             double x = location.getX();
             double y = location.getY();
@@ -117,6 +107,7 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
             stmt.setFloat(10, yaw);
             stmt.setFloat(11, pitch);
             stmt.execute();
+            this.spawnLocation = location;
         }
     }
 
@@ -130,7 +121,7 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
     }
 
     private void createTable() throws SQLException {
-        try(PreparedStatement stmt = this.ds.getConnection().prepareStatement("""
+        try(PreparedStatement stmt = this.getConnection().prepareStatement("""
             CREATE TABLE IF NOT EXISTS spawn_location (
                 world_uuid VARCHAR(36) NOT NULL PRIMARY KEY,
                 x DOUBLE NOT NULL,
@@ -144,8 +135,12 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
         }
     }
 
+    private Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(this.dbConfig.getUrl(), this.dbConfig.getUsername(), this.dbConfig.getPassword());
+    }
+
     @Override
     public void onDisable() {
-        this.ds.close();
+
     }
 }
