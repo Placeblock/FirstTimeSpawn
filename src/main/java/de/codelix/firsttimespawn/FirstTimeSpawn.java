@@ -1,5 +1,7 @@
 package de.codelix.firsttimespawn;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
@@ -14,7 +16,7 @@ import java.util.UUID;
 
 public class FirstTimeSpawn extends JavaPlugin implements Listener {
     public static FirstTimeSpawn INSTANCE;
-    private Connection con;
+    private HikariDataSource ds;
     private Location spawnLocation;
 
     @Override
@@ -50,7 +52,12 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
         }
 
         try {
-            this.con = DriverManager.getConnection("jdbc:mysql://"+host+":"+port+"/" + database + "?autoReconnect=true", user, password);
+            HikariConfig config = new HikariConfig();
+            config.setJdbcUrl("jdbc:mysql://" + host + ":" + port + "/" + database);
+            config.setUsername(user);
+            config.setPassword(password);
+            this.ds = new HikariDataSource(config);
+
             this.createTable();
             this.spawnLocation = this.loadSpawnLocation();
         } catch (SQLException e) {
@@ -62,51 +69,55 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
     }
 
     private Location loadSpawnLocation() throws SQLException {
-        PreparedStatement stmt = this.con.prepareStatement("""
-            SELECT * FROM spawn_location;
-        """);
-        ResultSet resultSet = stmt.executeQuery();
-        if (!resultSet.next()) {
-            this.getLogger().warning("Could not load spawn Location from Database. Did you already set one?");
-            return null;
+        Connection connection = this.ds.getConnection();
+        try (PreparedStatement stmt = connection.prepareStatement("""
+                    SELECT * FROM spawn_location;
+                """)) {
+            ResultSet resultSet = stmt.executeQuery();
+
+            if (!resultSet.next()) {
+                this.getLogger().warning("Could not load spawn Location from Database. Did you already set one?");
+                return null;
+            }
+            UUID uuid = UUID.fromString(resultSet.getString("world_uuid"));
+            double x = resultSet.getDouble("x");
+            double y = resultSet.getDouble("y");
+            double z = resultSet.getDouble("z");
+            float yaw = resultSet.getFloat("yaw");
+            float pitch = resultSet.getFloat("pitch");
+            World world = this.getServer().getWorld(uuid);
+            if (world == null) {
+                this.getLogger().warning("Invalid world uuid stored in spawn location");
+                return null;
+            }
+            return new Location(world, x, y, z, yaw, pitch);
         }
-        UUID uuid = UUID.fromString(resultSet.getString("world_uuid"));
-        double x = resultSet.getDouble("x");
-        double y = resultSet.getDouble("y");
-        double z = resultSet.getDouble("z");
-        float yaw = resultSet.getFloat("yaw");
-        float pitch = resultSet.getFloat("pitch");
-        World world = this.getServer().getWorld(uuid);
-        if (world == null) {
-            this.getLogger().warning("Invalid world uuid stored in spawn location");
-            return null;
-        }
-        return new Location(world, x, y, z, yaw, pitch);
     }
 
     public void storeSpawnLocation(Location location) throws SQLException {
         this.spawnLocation = location;
-        PreparedStatement stmt = this.con.prepareStatement("""
-            INSERT INTO spawn_location (world_uuid, x, y, z, yaw, pitch) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE x=?, y=?, z=?, yaw=?, pitch=?;
-        """);
-        UUID worldUUID = this.spawnLocation.getWorld().getUID();
-        double x = location.getX();
-        double y = location.getY();
-        double z = location.getZ();
-        float yaw = location.getYaw();
-        float pitch = location.getPitch();
-        stmt.setString(1, worldUUID.toString());
-        stmt.setDouble(2, x);
-        stmt.setDouble(3, y);
-        stmt.setDouble(4, z);
-        stmt.setFloat(5, yaw);
-        stmt.setFloat(6, pitch);
-        stmt.setDouble(7, x);
-        stmt.setDouble(8, y);
-        stmt.setDouble(9, z);
-        stmt.setFloat(10, yaw);
-        stmt.setFloat(11, pitch);
-        stmt.execute();
+        try (PreparedStatement stmt = this.ds.getConnection().prepareStatement("""
+                    INSERT INTO spawn_location (world_uuid, x, y, z, yaw, pitch) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE x=?, y=?, z=?, yaw=?, pitch=?;
+                """)) {
+            UUID worldUUID = this.spawnLocation.getWorld().getUID();
+            double x = location.getX();
+            double y = location.getY();
+            double z = location.getZ();
+            float yaw = location.getYaw();
+            float pitch = location.getPitch();
+            stmt.setString(1, worldUUID.toString());
+            stmt.setDouble(2, x);
+            stmt.setDouble(3, y);
+            stmt.setDouble(4, z);
+            stmt.setFloat(5, yaw);
+            stmt.setFloat(6, pitch);
+            stmt.setDouble(7, x);
+            stmt.setDouble(8, y);
+            stmt.setDouble(9, z);
+            stmt.setFloat(10, yaw);
+            stmt.setFloat(11, pitch);
+            stmt.execute();
+        }
     }
 
     @EventHandler
@@ -119,7 +130,7 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
     }
 
     private void createTable() throws SQLException {
-        this.con.prepareStatement("""
+        try(PreparedStatement stmt = this.ds.getConnection().prepareStatement("""
             CREATE TABLE IF NOT EXISTS spawn_location (
                 world_uuid VARCHAR(36) NOT NULL PRIMARY KEY,
                 x DOUBLE NOT NULL,
@@ -128,11 +139,13 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
                 yaw FLOAT NOT NULL,
                 pitch FLOAT NOT NULL
             );
-        """).execute();
+        """)) {
+            stmt.execute();
+        }
     }
 
     @Override
     public void onDisable() {
-
+        this.ds.close();
     }
 }
