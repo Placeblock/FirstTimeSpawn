@@ -1,13 +1,17 @@
 package de.codelix.firsttimespawn;
 
+import lombok.Getter;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Vector;
 
 import java.sql.*;
 import java.util.UUID;
@@ -15,6 +19,7 @@ import java.util.UUID;
 public class FirstTimeSpawn extends JavaPlugin implements Listener {
     public static FirstTimeSpawn INSTANCE;
     private DBConfig dbConfig;
+    @Getter
     private Location spawnLocation;
 
     @Override
@@ -120,6 +125,13 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
         }
     }
 
+    @EventHandler
+    public void on(PlayerRespawnEvent event) {
+        if (!event.isBedSpawn() && !event.isAnchorSpawn()) {
+            event.setRespawnLocation(this.spawnLocation);
+        }
+    }
+
     private void createTable() throws SQLException {
         try(PreparedStatement stmt = this.getConnection().prepareStatement("""
             CREATE TABLE IF NOT EXISTS spawn_location (
@@ -133,6 +145,11 @@ public class FirstTimeSpawn extends JavaPlugin implements Listener {
         """)) {
             stmt.execute();
         }
+    }
+
+    public boolean isInsideSpawn(Location location) {
+        Location d = location.subtract(this.spawnLocation.toVector());
+        return d.getX()*d.getX() + d.getZ()*d.getZ() < 2500;
     }
 
     private Connection getConnection() throws SQLException {
